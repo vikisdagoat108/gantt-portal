@@ -229,9 +229,6 @@
                         <th style="min-width:140px;">Start Date</th>
                         <th style="min-width:140px;">End Date</th>
                         <th>Duration</th>
-                        <th style="min-width:200px;">Predecessor Task</th>
-                        <th style="min-width:120px;">Link Type</th>
-                        <th style="min-width:90px;">Lag (Days)</th>
                         <th style="min-width:90px;">Progress %</th>
                         <th class="row-actions">Del</th>
                     </tr>
@@ -258,12 +255,40 @@
     </div>
 
     <div class="card">
-        <h3>Active Task Relationship Overlays (Dependencies & Lags)</h3>
-        <div class="grid-wrapper" style="max-height: 250px; overflow-y:auto;">
-            <table class="task-grid" id="depTable">
-                <thead><tr><th>Predecessor</th><th>Successor</th><th>Link Type</th><th>Lag</th></tr></thead>
-                <tbody id="dependencyListContainer"></tbody>
+        <h2>Step 3: Dependency Matrix (Logic Links & Lag)</h2>
+        <p style="color: var(--secondary); font-size: 14px; margin-top: -10px;">
+            Define which tasks depend on which. Pick a predecessor and successor from your saved tasks, choose the link type
+            (Finish-to-Start, Start-to-Start, Finish-to-Finish, or Start-to-Finish), and set the lag in days. Save your tasks first
+            in Step 2 so they're available to select here.
+        </p>
+
+        <div class="grid-wrapper">
+            <table class="task-grid" id="depGrid">
+                <thead>
+                    <tr>
+                        <th class="row-num">#</th>
+                        <th style="min-width:220px;">Predecessor Task</th>
+                        <th style="min-width:220px;">Successor Task</th>
+                        <th style="min-width:160px;">Link Type</th>
+                        <th style="min-width:90px;">Lag (Days)</th>
+                        <th class="row-actions">Del</th>
+                    </tr>
+                </thead>
+                <tbody id="depGridBody">
+                    <!-- rows injected by JS -->
+                </tbody>
             </table>
+        </div>
+
+        <div class="grid-legend">
+            <span><span class="legend-swatch" style="background:#F0FFF4;border:1px solid #C6F6D5;"></span>New link (not yet saved)</span>
+            <span><span class="legend-swatch" style="background:#FFFFF0;border:1px solid #FEFCBF;"></span>Existing link with unsaved edits</span>
+        </div>
+
+        <div class="btn-row">
+            <button type="button" class="btn btn-secondary" onclick="addDependencyRow()">+ Add Dependency</button>
+            <button type="button" class="btn btn-success" onclick="saveAllDependencies()">Save All Dependencies</button>
+            <span class="save-status" id="depSaveStatus"></span>
         </div>
     </div>
 </div>
@@ -275,6 +300,8 @@
     // { rowId (client-side unique key), dbId (uuid or null if new), isDirty, isNew }
     let gridRows = [];
     let rowCounter = 0;
+    let depRows = [];
+    let depRowCounter = 0;
 
     function initializeSupabase() {
         const url = document.getElementById('supUrl').value.trim();
@@ -376,9 +403,6 @@
             title: existing ? existing.title : '',
             start_date: existing ? existing.start_date : '',
             end_date: existing ? existing.end_date : '',
-            predecessor: '', // resolved after load (set in refreshDataContainers via dependencies)
-            depType: 'FS',
-            lag: 0,
             progress: existing ? existing.progress : 0
         };
     }
@@ -394,7 +418,7 @@
     function markDirty(rowId) {
         const row = gridRows.find(r => r.rowId === rowId);
         if (row && !row.isNew) row.isDirty = true;
-        renderGrid(true);
+        renderGrid(true); // re-render lightly to update row coloring / duration without losing focus issues much
     }
 
     function updateRowField(rowId, field, value) {
@@ -403,7 +427,7 @@
         row[field] = value;
         if (!row.isNew) row.isDirty = true;
         updateDurationCell(rowId);
-        if (field === 'title') refreshPredecessorOptions();
+        if (field === 'title') refreshDependencyTaskOptions();
     }
 
     function updateDurationCell(rowId) {
@@ -435,24 +459,6 @@
         if (error) alert('Could not delete task: ' + error.message);
     }
 
-    function refreshPredecessorOptions() {
-        gridRows.forEach(row => {
-            const sel = document.getElementById('pred_' + row.rowId);
-            if (!sel) return;
-            const currentVal = sel.value;
-            sel.innerHTML = '<option value="">-- No Dependency --</option>';
-            gridRows.forEach(other => {
-                if (other.rowId === row.rowId) return;
-                const label = other.title && other.title.trim() ? other.title : '(untitled task)';
-                const opt = document.createElement('option');
-                opt.value = other.rowId;
-                opt.innerText = label;
-                sel.appendChild(opt);
-            });
-            sel.value = currentVal;
-        });
-    }
-
     function renderGrid() {
         const body = document.getElementById('gridBody');
         body.innerHTML = '';
@@ -470,17 +476,6 @@
                 <td><input type="date" value="${row.end_date || ''}"
                     onchange="updateRowField('${row.rowId}','end_date',this.value)"></td>
                 <td class="col-duration" id="dur_${row.rowId}">—</td>
-                <td><select id="pred_${row.rowId}" onchange="updateRowField('${row.rowId}','predecessor',this.value)">
-                    <option value="">-- No Dependency --</option>
-                </select></td>
-                <td><select onchange="updateRowField('${row.rowId}','depType',this.value)">
-                    <option value="FS" ${row.depType==='FS'?'selected':''}>Finish-to-Start</option>
-                    <option value="SS" ${row.depType==='SS'?'selected':''}>Start-to-Start</option>
-                    <option value="FF" ${row.depType==='FF'?'selected':''}>Finish-to-Finish</option>
-                    <option value="SF" ${row.depType==='SF'?'selected':''}>Start-to-Finish</option>
-                </select></td>
-                <td><input type="number" value="${row.lag}" min="-90" max="90"
-                    onchange="updateRowField('${row.rowId}','lag',parseInt(this.value)||0)"></td>
                 <td><input type="number" value="${row.progress}" min="0" max="100" step="1"
                     onchange="updateRowField('${row.rowId}','progress',parseFloat(this.value)||0)"></td>
                 <td class="row-actions"><button onclick="removeRow('${row.rowId}')" title="Remove row">✕</button></td>
@@ -489,7 +484,158 @@
             updateDurationCell(row.rowId);
         });
 
-        refreshPredecessorOptions();
+        refreshDependencyTaskOptions();
+    }
+
+    // ---------- DEPENDENCY MATRIX (Step 3) ----------
+    // A dependency row only makes sense once both tasks exist in the database (they need real UUIDs
+    // to reference in task_dependencies), so the predecessor/successor dropdowns list saved tasks only.
+
+    function newDepRowObject(existing) {
+        depRowCounter++;
+        return {
+            depRowId: 'd' + depRowCounter,
+            dbId: existing ? existing.id : null,
+            isNew: !existing,
+            isDirty: false,
+            source_task_id: existing ? existing.source_task_id : '',
+            target_task_id: existing ? existing.target_task_id : '',
+            type: existing ? existing.type : 'FS',
+            lag: existing ? existing.lag : 0
+        };
+    }
+
+    function addDependencyRow() {
+        const savedTasks = gridRows.filter(r => r.dbId);
+        if (savedTasks.length < 2) {
+            alert('You need at least 2 saved tasks before you can link a dependency. Save your tasks in Step 2 first.');
+            return;
+        }
+        depRows.push(newDepRowObject(null));
+        renderDependencyGrid();
+    }
+
+    function updateDepField(depRowId, field, value) {
+        const row = depRows.find(r => r.depRowId === depRowId);
+        if (!row) return;
+        row[field] = value;
+        if (!row.isNew) row.isDirty = true;
+        renderDependencyGrid();
+    }
+
+    function removeDependencyRow(depRowId) {
+        const row = depRows.find(r => r.depRowId === depRowId);
+        if (!row) return;
+        if (!row.isNew) {
+            if (!confirm('This dependency link is already saved. Remove it permanently?')) return;
+            deleteExistingDependency(row.dbId);
+        }
+        depRows = depRows.filter(r => r.depRowId !== depRowId);
+        renderDependencyGrid();
+    }
+
+    async function deleteExistingDependency(dbId) {
+        if (!supabaseClient) return;
+        const { error } = await supabaseClient.from('task_dependencies').delete().eq('id', dbId);
+        if (error) alert('Could not delete dependency: ' + error.message);
+    }
+
+    function refreshDependencyTaskOptions() {
+        // Only saved tasks (those with a real dbId) can be picked as predecessor/successor
+        renderDependencyGrid();
+    }
+
+    function buildTaskOptionsHtml(selectedDbId) {
+        const savedTasks = gridRows.filter(r => r.dbId);
+        let html = '<option value="">-- Select a task --</option>';
+        savedTasks.forEach(t => {
+            const label = t.title && t.title.trim() ? t.title : '(untitled task)';
+            html += `<option value="${t.dbId}" ${t.dbId === selectedDbId ? 'selected' : ''}>${escapeAttr(label)}</option>`;
+        });
+        return html;
+    }
+
+    function renderDependencyGrid() {
+        const body = document.getElementById('depGridBody');
+        if (!body) return;
+        body.innerHTML = '';
+
+        depRows.forEach((row, idx) => {
+            const tr = document.createElement('tr');
+            tr.className = row.isNew ? 'new-row' : (row.isDirty ? 'dirty-row' : '');
+
+            tr.innerHTML = `
+                <td class="row-num">${idx + 1}</td>
+                <td><select onchange="updateDepField('${row.depRowId}','source_task_id',this.value)">
+                    ${buildTaskOptionsHtml(row.source_task_id)}
+                </select></td>
+                <td><select onchange="updateDepField('${row.depRowId}','target_task_id',this.value)">
+                    ${buildTaskOptionsHtml(row.target_task_id)}
+                </select></td>
+                <td><select onchange="updateDepField('${row.depRowId}','type',this.value)">
+                    <option value="FS" ${row.type==='FS'?'selected':''}>Finish-to-Start (FS)</option>
+                    <option value="SS" ${row.type==='SS'?'selected':''}>Start-to-Start (SS)</option>
+                    <option value="FF" ${row.type==='FF'?'selected':''}>Finish-to-Finish (FF)</option>
+                    <option value="SF" ${row.type==='SF'?'selected':''}>Start-to-Finish (SF)</option>
+                </select></td>
+                <td><input type="number" value="${row.lag}" min="-90" max="90"
+                    onchange="updateDepField('${row.depRowId}','lag',parseInt(this.value)||0)"></td>
+                <td class="row-actions"><button onclick="removeDependencyRow('${row.depRowId}')" title="Remove link">✕</button></td>
+            `;
+            body.appendChild(tr);
+        });
+    }
+
+    async function saveAllDependencies() {
+        if (!supabaseClient) return alert("Verify database connections.");
+        if (!activeProjectId) return alert("Initialize Step 1 (Project Setup) first.");
+
+        const statusEl = document.getElementById('depSaveStatus');
+        statusEl.className = 'save-status pending';
+        statusEl.innerText = 'Saving...';
+
+        const rowsToProcess = depRows.filter(r => r.source_task_id && r.target_task_id);
+
+        if (rowsToProcess.length === 0) {
+            statusEl.className = 'save-status err';
+            statusEl.innerText = 'Nothing to save — pick a predecessor and successor task first.';
+            return;
+        }
+
+        try {
+            for (const row of rowsToProcess) {
+                if (row.source_task_id === row.target_task_id) {
+                    throw new Error('A task cannot depend on itself — check your selections.');
+                }
+
+                const payload = {
+                    source_task_id: row.source_task_id,
+                    target_task_id: row.target_task_id,
+                    type: row.type || 'FS',
+                    lag: row.lag || 0
+                };
+
+                if (row.isNew) {
+                    const { data, error } = await supabaseClient.from('task_dependencies').insert([payload]).select();
+                    if (error) throw new Error(`Could not save dependency link: ${error.message}`);
+                    row.dbId = data[0].id;
+                    row.isNew = false;
+                } else {
+                    const { error } = await supabaseClient.from('task_dependencies').update(payload).eq('id', row.dbId);
+                    if (error) throw new Error(`Could not update dependency link: ${error.message}`);
+                }
+                row.isDirty = false;
+            }
+
+            statusEl.className = 'save-status ok';
+            statusEl.innerText = `Saved ${rowsToProcess.length} dependency link(s) successfully.`;
+            renderDependencyGrid();
+            await refreshDataContainers();
+
+        } catch (err) {
+            statusEl.className = 'save-status err';
+            statusEl.innerText = err.message;
+        }
     }
 
     function escapeAttr(str) {
@@ -507,6 +653,7 @@
         statusEl.className = 'save-status pending';
         statusEl.innerText = 'Saving...';
 
+        // Validate rows that have at least a title before attempting save
         const rowsToProcess = gridRows.filter(r => r.title && r.title.trim());
 
         if (rowsToProcess.length === 0) {
@@ -546,28 +693,8 @@
                 row.isDirty = false;
             }
 
-            // PASS 2: Now that every row has a dbId, resolve and commit dependency links
-            for (const row of rowsToProcess) {
-                if (!row.predecessor) continue;
-                const predRow = gridRows.find(r => r.rowId === row.predecessor);
-                if (!predRow || !predRow.dbId) continue;
-
-                await supabaseClient
-                    .from('task_dependencies')
-                    .delete()
-                    .eq('source_task_id', predRow.dbId)
-                    .eq('target_task_id', row.dbId);
-
-                const { error: depError } = await supabaseClient
-                    .from('task_dependencies')
-                    .insert([{
-                        source_task_id: predRow.dbId,
-                        target_task_id: row.dbId,
-                        type: row.depType || 'FS',
-                        lag: row.lag || 0
-                    }]);
-                if (depError) throw new Error(`Dependency link failed for "${row.title}": ${depError.message}`);
-            }
+            // PASS 2: refresh the dependency dropdowns now that tasks have real dbIds
+            renderDependencyGrid();
 
             statusEl.className = 'save-status ok';
             statusEl.innerText = `Saved ${rowsToProcess.length} task(s) successfully.`;
@@ -596,39 +723,31 @@
             return;
         }
 
-        const { data: dependencies } = await supabaseClient
-            .from('task_dependencies')
-            .select('*');
+        // Only fetch dependencies that involve this project's tasks
+        const taskIds = (tasks || []).map(t => t.id);
+        let dependencies = [];
+        if (taskIds.length > 0) {
+            const { data: deps } = await supabaseClient
+                .from('task_dependencies')
+                .select('*')
+                .in('target_task_id', taskIds);
+            dependencies = deps || [];
+        }
 
+        // Rebuild gridRows from DB state
         gridRows = (tasks || []).map(t => newRowObject(t));
-
-        (dependencies || []).forEach(dep => {
-            const targetRow = gridRows.find(r => r.dbId === dep.target_task_id);
-            const sourceRow = gridRows.find(r => r.dbId === dep.source_task_id);
-            if (targetRow && sourceRow) {
-                targetRow.predecessor = sourceRow.rowId;
-                targetRow.depType = dep.type;
-                targetRow.lag = dep.lag;
-            }
-        });
-
-        if (gridRows.length === 0) addBlankRow(3);
+        if (gridRows.length === 0) addBlankRow(3); // give the user a few rows to start typing into
         else renderGrid();
 
-        const depBody = document.getElementById('dependencyListContainer');
-        depBody.innerHTML = '';
-        (dependencies || []).forEach(dep => {
-            const srcTask = (tasks || []).find(t => t.id === dep.source_task_id);
-            const tgtTask = (tasks || []).find(t => t.id === dep.target_task_id);
-            if (!srcTask || !tgtTask) return;
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td style="padding:8px;">${srcTask.title}</td><td style="padding:8px;">${tgtTask.title}</td><td style="padding:8px;">${dep.type}</td><td style="padding:8px;">${dep.lag}</td>`;
-            depBody.appendChild(tr);
-        });
+        // Rebuild the dependency matrix from DB state
+        depRows = dependencies.map(d => newDepRowObject(d));
+        renderDependencyGrid();
 
         document.getElementById('saveStatus').innerText = '';
+        document.getElementById('depSaveStatus').innerText = '';
     }
 
+    // Start with a few empty rows visible even before a project/connection is set, so the UI isn't blank
     addBlankRow(3);
 </script>
 </body>
