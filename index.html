@@ -283,6 +283,30 @@ Task - 102&#9;Dirt Work&#9;3&#9;Task - 100"></textarea>
     </div>
 
     <div class="card">
+        <h2>Import Dependencies from Excel / CSV</h2>
+        <p style="color: var(--secondary); font-size: 14px; margin-top: -10px;">
+            Bring your dependency block in all at once. Tasks must already be saved (with matching Task IDs) before importing —
+            each row is matched to a saved task by its Task ID. Expected columns: Source Task ID, Target Task ID, Flag, Days.
+        </p>
+
+        <div class="form-group">
+            <label>Expected columns (in this order): Source Task ID, Target Task ID, Flag, Days</label>
+            <input type="file" id="depImportFileInput" accept=".xlsx,.xls,.csv" onchange="handleDepFileImport(event)">
+        </div>
+
+        <div class="form-group">
+            <label for="depPasteImportArea">Or paste cells copied from Excel (tab-separated)</label>
+            <textarea id="depPasteImportArea" style="height: 100px; font-family: monospace;"
+                placeholder="Task - 100&#9;Task - 5001&#9;FS&#9;0
+Task - 101&#9;Task - 103&#9;FS&#9;0"></textarea>
+        </div>
+        <div class="btn-row" style="margin-top: 0;">
+            <button type="button" class="btn btn-secondary" onclick="handleDepPasteImport()">Import Pasted Rows</button>
+            <span class="save-status" id="depImportStatus"></span>
+        </div>
+    </div>
+
+    <div class="card">
         <h2>Step 3: Dependency Matrix (Logic Links & Lag)</h2>
         <p style="color: var(--secondary); font-size: 14px; margin-top: -10px;">
             Define which tasks depend on which. Pick a Source (predecessor) and Target (successor) from your saved tasks, choose
@@ -529,6 +553,90 @@ Task - 102&#9;Dirt Work&#9;3&#9;Task - 100"></textarea>
         const rows = text.trim().split('\n').map(line => line.split('\t'));
         importRowsFromArrays(rows);
         document.getElementById('pasteImportArea').value = '';
+    }
+
+    // ---------- DEPENDENCY IMPORT FROM EXCEL / CSV / PASTE ----------
+
+    function importDependencyRowsFromArrays(rows) {
+        // Matches the Output Sheet dependency block: Source Task ID, Target Task ID, Flag, Days
+        const statusEl = document.getElementById('depImportStatus');
+        let imported = 0;
+        let skipped = 0;
+
+        rows.forEach((cells) => {
+            if (!cells || cells.length === 0) return;
+            const sourceTaskId = (cells[0] || '').toString().trim();
+            const targetTaskId = (cells[1] || '').toString().trim();
+            if (!sourceTaskId || !targetTaskId) return;
+
+            // Skip the literal header row
+            if (/^source ?task ?id$/i.test(sourceTaskId)) return;
+
+            // Match against saved tasks by their Task ID text field
+            const sourceRow = gridRows.find(r => r.task_id && r.task_id.trim() === sourceTaskId && r.dbId);
+            const targetRow = gridRows.find(r => r.task_id && r.task_id.trim() === targetTaskId && r.dbId);
+
+            if (!sourceRow || !targetRow) {
+                skipped++;
+                return;
+            }
+
+            const dep = newDepRowObject(null);
+            dep.source_task_id = sourceRow.dbId;
+            dep.target_task_id = targetRow.dbId;
+            dep.type = (cells[2] || 'FS').toString().trim().toUpperCase();
+            dep.lag = parseInt(cells[3]) || 0;
+            depRows.push(dep);
+            imported++;
+        });
+
+        renderDependencyGrid();
+        statusEl.className = skipped > 0 ? 'save-status err' : 'save-status ok';
+        statusEl.innerText = skipped > 0
+            ? `Imported ${imported} link(s). Skipped ${skipped} row(s) — their Task IDs don't match any saved task yet (save those tasks first, then re-import).`
+            : `Imported ${imported} dependency link(s). Review them below, then click "Save All Dependencies".`;
+    }
+
+    function handleDepFileImport(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const statusEl = document.getElementById('depImportStatus');
+        statusEl.className = 'save-status pending';
+        statusEl.innerText = 'Reading file...';
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                const firstSheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[firstSheetName];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+                importDependencyRowsFromArrays(rows);
+            } catch (err) {
+                statusEl.className = 'save-status err';
+                statusEl.innerText = 'Could not read file: ' + err.message;
+            }
+            event.target.value = '';
+        };
+        reader.onerror = function() {
+            statusEl.className = 'save-status err';
+            statusEl.innerText = 'Could not read file.';
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function handleDepPasteImport() {
+        const text = document.getElementById('depPasteImportArea').value;
+        const statusEl = document.getElementById('depImportStatus');
+        if (!text || !text.trim()) {
+            statusEl.className = 'save-status err';
+            statusEl.innerText = 'Paste box is empty.';
+            return;
+        }
+        const rows = text.trim().split('\n').map(line => line.split('\t'));
+        importDependencyRowsFromArrays(rows);
+        document.getElementById('depPasteImportArea').value = '';
     }
 
     function addBlankRow(count) {
@@ -800,19 +908,23 @@ Task - 102&#9;Dirt Work&#9;3&#9;Task - 100"></textarea>
         try {
             // PASS 1: Insert/update tasks themselves (without dependencies yet)
             for (const row of rowsToProcess) {
-                if (!row.start_date || !row.end_date) {
-                    throw new Error(`Task "${row.title}" is missing a start or end date.`);
+                let duration = null;
+                if (row.start_date && row.end_date) {
+                    const d = Math.ceil((new Date(row.end_date) - new Date(row.start_date)) / (1000 * 60 * 60 * 24));
+                    duration = d >= 0 ? d : 0;
+                } else if (row.weeks !== '' && row.weeks !== undefined && row.weeks !== null) {
+                    // No dates yet — fall back to Weeks so duration isn't lost
+                    duration = Math.round(row.weeks * 7);
                 }
-                const duration = Math.ceil((new Date(row.end_date) - new Date(row.start_date)) / (1000 * 60 * 60 * 24));
 
                 const payload = {
                     project_id: activeProjectId,
                     task_id: row.task_id ? row.task_id.trim() : null,
                     parent_id: row.parent_id ? row.parent_id.trim() : null,
                     title: row.title.trim(),
-                    start_date: row.start_date,
-                    end_date: row.end_date,
-                    duration: duration >= 0 ? duration : 0,
+                    start_date: row.start_date || null,
+                    end_date: row.end_date || null,
+                    duration: duration,
                     sort_order: gridRows.indexOf(row) + 1,
                     type: 'task',
                     progress: row.progress || 0
