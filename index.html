@@ -344,6 +344,22 @@ Task - 101&#9;Task - 103&#9;FS&#9;0"></textarea>
             <span class="save-status" id="depSaveStatus"></span>
         </div>
     </div>
+
+    <div class="card">
+        <h2>Step 4: Gantt Chart</h2>
+        <p style="color: var(--secondary); font-size: 14px; margin-top: -10px;">
+            Visualizes every saved task with a Start Date and End Date as a timeline bar, colored by Progress %, with
+            dependency arrows drawn between linked tasks. Tasks missing dates are listed separately below the chart —
+            fill in their Start/End Date and regenerate to include them.
+        </p>
+        <div class="btn-row" style="margin-top:0; margin-bottom: 15px;">
+            <button type="button" class="btn btn-secondary" onclick="renderGanttChart()">Generate / Refresh Gantt Chart</button>
+        </div>
+        <div id="ganttContainer" style="overflow-x:auto; border:1px solid var(--border); border-radius:6px; padding: 10px; background:white;">
+            <p style="color:var(--secondary); padding: 20px; text-align:center;">Click "Generate / Refresh Gantt Chart" once your tasks have dates.</p>
+        </div>
+        <div id="ganttMissingDates" style="margin-top: 10px; font-size: 13px; color: var(--secondary);"></div>
+    </div>
 </div>
 
 <script>
@@ -459,7 +475,7 @@ Task - 101&#9;Task - 103&#9;FS&#9;0"></textarea>
             weeks: existing && existing.duration ? Math.round((existing.duration / 7) * 10) / 10 : '',
             start_date: existing ? existing.start_date : '',
             end_date: existing ? existing.end_date : '',
-            progress: existing ? existing.progress : 0
+            progress: existing && existing.progress !== null && existing.progress !== undefined ? existing.progress : ''
         };
     }
 
@@ -718,8 +734,8 @@ Task - 101&#9;Task - 103&#9;FS&#9;0"></textarea>
                     onchange="updateRowField('${row.rowId}','start_date',this.value)"></td>
                 <td><input type="date" value="${row.end_date || ''}"
                     onchange="updateRowField('${row.rowId}','end_date',this.value)"></td>
-                <td><input type="number" value="${row.progress}" min="0" max="100" step="1"
-                    onchange="updateRowField('${row.rowId}','progress',parseFloat(this.value)||0)"></td>
+                <td><input type="number" value="${row.progress !== undefined && row.progress !== null ? row.progress : ''}" min="0" max="100" step="1" placeholder="—"
+                    onchange="updateRowField('${row.rowId}','progress', this.value === '' ? '' : (parseFloat(this.value)||0))"></td>
                 <td class="row-actions"><button onclick="removeRow('${row.rowId}')" title="Remove row">✕</button></td>
             `;
             body.appendChild(tr);
@@ -927,7 +943,7 @@ Task - 101&#9;Task - 103&#9;FS&#9;0"></textarea>
                     duration: duration,
                     sort_order: gridRows.indexOf(row) + 1,
                     type: 'task',
-                    progress: row.progress || 0
+                    progress: (row.progress === '' || row.progress === undefined || row.progress === null) ? null : row.progress
                 };
 
                 if (row.isNew) {
@@ -994,7 +1010,102 @@ Task - 101&#9;Task - 103&#9;FS&#9;0"></textarea>
 
         document.getElementById('saveStatus').innerText = '';
         document.getElementById('depSaveStatus').innerText = '';
+        renderGanttChart();
     }
+
+    function renderGanttChart() {
+        const container = document.getElementById('ganttContainer');
+        const missingEl = document.getElementById('ganttMissingDates');
+
+        const tasksWithDates = gridRows.filter(r => r.dbId && r.start_date && r.end_date && r.title && r.title.trim());
+        const tasksMissingDates = gridRows.filter(r => r.dbId && r.title && r.title.trim() && (!r.start_date || !r.end_date));
+
+        if (tasksWithDates.length === 0) {
+            container.innerHTML = '<p style="color:var(--secondary); padding: 20px; text-align:center;">No saved tasks have both a Start Date and End Date yet. Fill in dates in Step 2 and save, then regenerate.</p>';
+            missingEl.innerHTML = '';
+            return;
+        }
+
+        // Determine overall date range
+        const starts = tasksWithDates.map(t => new Date(t.start_date).getTime());
+        const ends = tasksWithDates.map(t => new Date(t.end_date).getTime());
+        const minDate = new Date(Math.min(...starts));
+        const maxDate = new Date(Math.max(...ends));
+        const totalDays = Math.max(1, Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)));
+
+        const pxPerDay = totalDays > 90 ? 6 : (totalDays > 30 ? 12 : 24);
+        const chartWidth = Math.max(600, totalDays * pxPerDay);
+        const rowHeight = 32;
+        const labelWidth = 220;
+        const chartHeight = tasksWithDates.length * rowHeight + 40;
+
+        function dayOffset(dateStr) {
+            return Math.round((new Date(dateStr) - minDate) / (1000 * 60 * 60 * 24));
+        }
+
+        // Build month/week gridlines along the top
+        let gridlinesHtml = '';
+        for (let d = 0; d <= totalDays; d += (totalDays > 90 ? 30 : 7)) {
+            const x = labelWidth + d * pxPerDay;
+            const labelDate = new Date(minDate.getTime() + d * 24 * 60 * 60 * 1000);
+            gridlinesHtml += `<div style="position:absolute; left:${x}px; top:0; bottom:0; width:1px; background:var(--border);"></div>`;
+            gridlinesHtml += `<div style="position:absolute; left:${x + 4}px; top:0; font-size:11px; color:var(--secondary);">${labelDate.toLocaleDateString(undefined,{month:'short',day:'numeric'})}</div>`;
+        }
+
+        // Build task bars
+        let barsHtml = '';
+        tasksWithDates.forEach((task, idx) => {
+            const y = 24 + idx * rowHeight;
+            const x = labelWidth + dayOffset(task.start_date) * pxPerDay;
+            const w = Math.max(4, (dayOffset(task.end_date) - dayOffset(task.start_date)) * pxPerDay);
+            const progress = task.progress !== '' && task.progress !== null && task.progress !== undefined ? task.progress : 0;
+            const barColor = progress >= 100 ? 'var(--success)' : 'var(--accent)';
+
+            barsHtml += `
+                <div style="position:absolute; left:0; top:${y}px; width:${labelWidth - 10}px; font-size:12px; font-weight:600; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeAttr(task.title)}">
+                    ${task.task_id ? escapeAttr(task.task_id) + ' — ' : ''}${escapeAttr(task.title)}
+                </div>
+                <div style="position:absolute; left:${x}px; top:${y}px; width:${w}px; height:20px; background:${barColor}; border-radius:4px; opacity:0.85;" title="${escapeAttr(task.title)}: ${task.start_date} to ${task.end_date} (${progress}%)">
+                    <div style="height:100%; width:${Math.min(100, progress)}%; background:rgba(0,0,0,0.25); border-radius:4px;"></div>
+                </div>
+            `;
+        });
+
+        // Build dependency arrows (simple lines connecting end-of-source to start-of-target)
+        let arrowsHtml = '';
+        depRows.filter(d => d.source_task_id && d.target_task_id).forEach(dep => {
+            const sourceIdx = tasksWithDates.findIndex(t => t.dbId === dep.source_task_id);
+            const targetIdx = tasksWithDates.findIndex(t => t.dbId === dep.target_task_id);
+            if (sourceIdx === -1 || targetIdx === -1) return;
+
+            const sourceTask = tasksWithDates[sourceIdx];
+            const targetTask = tasksWithDates[targetIdx];
+
+            const x1 = labelWidth + dayOffset(sourceTask.end_date) * pxPerDay;
+            const y1 = 24 + sourceIdx * rowHeight + 10;
+            const x2 = labelWidth + dayOffset(targetTask.start_date) * pxPerDay;
+            const y2 = 24 + targetIdx * rowHeight + 10;
+
+            arrowsHtml += `<svg style="position:absolute; left:0; top:0; pointer-events:none;" width="${chartWidth}" height="${chartHeight}">
+                <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="var(--secondary)" stroke-width="1.5" stroke-dasharray="3,2" />
+                <circle cx="${x2}" cy="${y2}" r="3" fill="var(--secondary)" />
+            </svg>`;
+        });
+
+        container.innerHTML = `<div style="position:relative; width:${chartWidth}px; height:${chartHeight}px; font-family: inherit;">
+            ${gridlinesHtml}
+            ${barsHtml}
+            ${arrowsHtml}
+        </div>`;
+
+        if (tasksMissingDates.length > 0) {
+            missingEl.innerHTML = `<strong>${tasksMissingDates.length} task(s) excluded</strong> — missing a Start or End Date: ` +
+                tasksMissingDates.map(t => escapeAttr(t.title)).join(', ');
+        } else {
+            missingEl.innerHTML = '';
+        }
+    }
+
 
     // Start with a few empty rows visible even before a project/connection is set, so the UI isn't blank
     addBlankRow(3);
