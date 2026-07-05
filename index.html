@@ -66,15 +66,6 @@
         <button class="config-btn" onclick="initializeSupabase()">Establish Connection</button>
     </div>
 
-    <div class="info-box">
-        <strong>⚠ One-time SQL — run this in Supabase SQL Editor before first use:</strong><br>
-        <code>ALTER TABLE tasks ALTER COLUMN progress DROP NOT NULL;</code><br>
-        <code>ALTER TABLE tasks ALTER COLUMN progress SET DEFAULT 0;</code><br>
-        <code>ALTER TABLE tasks ALTER COLUMN sort_order DROP NOT NULL;</code><br>
-        <code>ALTER TABLE tasks ALTER COLUMN type DROP NOT NULL;</code><br>
-        <code>ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_label TEXT;</code>
-    </div>
-
     <!-- STEP 0 -->
     <div class="card">
         <h2>Step 0: Resume an Existing Project</h2>
@@ -413,18 +404,26 @@
         let imported = 0, skipped = 0;
         rows.forEach(cells => {
             if (!cells || cells.length === 0) return;
-            const srcLabel = (cells[0] || '').toString().trim();
-            const tgtLabel = (cells[1] || '').toString().trim();
+            const c0 = (cells[0] || '').toString().trim();
+            // Skip header row (first cell is "ID" or "Source Task ID")
+            if (/^id$/i.test(c0) || /^source/i.test(c0)) return;
+            // Skip blank rows
+            if (cells.every(c => !c || String(c).trim() === '')) return;
+
+            // CSV format: ID(0), Source Task ID(1), Target Task ID(2), Flag(3), Lag(4), Dependency(5)
+            const srcLabel = (cells[1] || '').toString().trim();
+            const tgtLabel = (cells[2] || '').toString().trim();
             if (!srcLabel || !tgtLabel) return;
-            if (/^source/i.test(srcLabel)) return; // header
+
             const srcRow = gridRows.find(r => r.task_label === srcLabel && r.dbId);
             const tgtRow = gridRows.find(r => r.task_label === tgtLabel && r.dbId);
             if (!srcRow || !tgtRow) { skipped++; return; }
+
             const dep = newDepRowObject(null);
             dep.source_task_id = srcRow.dbId;
             dep.target_task_id = tgtRow.dbId;
-            dep.type = (cells[2] || 'FS').toString().trim().toUpperCase();
-            dep.lag  = parseInt(cells[3]) || 0;
+            dep.type = (cells[3] || 'FS').toString().trim().toUpperCase();
+            dep.lag  = parseInt(cells[4]) || 0;
             depRows.push(dep);
             imported++;
         });
