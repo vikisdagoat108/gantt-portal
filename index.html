@@ -139,7 +139,6 @@
                     <th style="min-width:120px;">Start Date</th>
                     <th style="min-width:120px;">End Date</th>
                     <th style="min-width:75px;">Progress %</th>
-                    <th style="min-width:70px;">Sort</th>
                     <th class="row-actions">Del</th>
                 </tr></thead>
                 <tbody id="gridBody"></tbody>
@@ -502,7 +501,6 @@
                 <td><input type="date"   value="${row.start_date || ''}" onchange="updateField('${row.rowId}','start_date',this.value)"></td>
                 <td><input type="date"   value="${row.end_date   || ''}" onchange="updateField('${row.rowId}','end_date',this.value)"></td>
                 <td><input type="number" value="${row.progress !== '' && row.progress !== null && row.progress !== undefined ? row.progress : ''}" min="0" max="100" step="1" placeholder="—" onchange="updateField('${row.rowId}','progress',this.value===''?'':(parseFloat(this.value)||0))"></td>
-                <td><input type="number" value="${row.sort_order !== '' && row.sort_order !== undefined ? row.sort_order : ''}" min="0" placeholder="—" onchange="updateField('${row.rowId}','sort_order',this.value===''?'':(parseInt(this.value)||0))"></td>
                 <td class="row-actions"><button onclick="removeRow('${row.rowId}')" title="Delete">✕</button></td>`;
             body.appendChild(tr);
         });
