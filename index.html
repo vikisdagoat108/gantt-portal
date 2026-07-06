@@ -61,8 +61,8 @@
     </header>
 
     <div class="config-box">
-        <div><label>Supabase URL</label><input type="text" id="supUrl" placeholder="https://xxxx.supabase.co"></div>
-        <div><label>Supabase Anon Key</label><input type="password" id="supKey" placeholder="eyJhbGci..."></div>
+        <div><label>Supabase URL</label><input type="text" id="supUrl" value="https://lufyzkbnbxsmosmrwkdv.supabase.co"></div>
+        <div><label>Supabase Anon Key</label><input type="password" id="supKey" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Znl6a2JuYnhzbW9zbXJ3a2R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NjIyNjEsImV4cCI6MjA5ODIzODI2MX0.BhxtYwIGcoLYAepll4nqxUgVmFt7UFACgDFioZ8xjjs"></div>
         <button class="config-btn" onclick="initializeSupabase()">Establish Connection</button>
     </div>
 
@@ -227,7 +227,6 @@
         const key = document.getElementById('supKey').value.trim();
         if (!url || !key) return alert("Enter both Supabase URL and Anon Key.");
         supabaseClient = supabase.createClient(url, key);
-        alert("Connected!");
         fetchExistingProjects();
     }
 
@@ -861,6 +860,8 @@
     }
 
     addBlankRow(3);
+    // Auto-connect on page load
+    initializeSupabase();
 </script>
 </body>
 </html>
