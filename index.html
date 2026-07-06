@@ -60,7 +60,10 @@
         <p>Import tasks from your CSV, manage dependencies, and generate a Gantt chart — all synced to Supabase.</p>
     </header>
 
-    <div class="config-box">
+    <div style="text-align:right; margin-bottom: 10px;">
+        <button class="config-btn" onclick="document.getElementById('configBox').style.display = document.getElementById('configBox').style.display === 'none' ? 'flex' : 'none'" style="font-size:12px; padding: 6px 14px; background: var(--secondary);">⚙ Connection Settings</button>
+    </div>
+    <div class="config-box" id="configBox" style="display:none;">
         <div><label>Supabase URL</label><input type="text" id="supUrl" value="https://lufyzkbnbxsmosmrwkdv.supabase.co"></div>
         <div><label>Supabase Anon Key</label><input type="password" id="supKey" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1Znl6a2JuYnhzbW9zbXJ3a2R2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NjIyNjEsImV4cCI6MjA5ODIzODI2MX0.BhxtYwIGcoLYAepll4nqxUgVmFt7UFACgDFioZ8xjjs"></div>
         <button class="config-btn" onclick="initializeSupabase()">Establish Connection</button>
