@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCH Build Tracker</title>
+    <title>MCH Project Tracker</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
@@ -113,7 +113,7 @@
 
         <!-- SIGN IN -->
         <div id="signinPanel">
-            <h1>🏗 Gantt Project Portal</h1>
+            <h1>🏗 MCH Project Tracker</h1>
             <p>Sign in to continue</p>
             <div class="login-field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"></div>
             <div class="login-field"><label>Password</label><input type="password" id="loginPassword" placeholder="••••••••" onkeydown="if(event.key==='Enter') doLogin()"></div>
@@ -142,7 +142,7 @@
 <div id="mainApp" style="display:none;">
 
     <div id="topBar">
-        <h1>🏗 Gantt Project Portal</h1>
+        <h1>🏗 MCH Project Tracker</h1>
         <div class="topbar-right">
             <span class="role-badge" id="roleBadge"></span>
             <button class="settings-btn" onclick="toggleConfig()">⚙ Connection</button>
@@ -962,8 +962,8 @@ function renderGanttChart(containerId) {
     const maxDate  = new Date(Math.max(...ends));
     const totalDays = Math.max(1, Math.ceil((maxDate - minDate) / 86400000));
     const pxPerDay  = totalDays > 120 ? 4 : totalDays > 60 ? 7 : totalDays > 30 ? 12 : 20;
-    const labelWidth = 260, rowH = 34, headerH = 30;
-    const chartW = Math.max(700, labelWidth + totalDays * pxPerDay + 200);
+    const labelWidth = 320, rowH = 34, headerH = 30;
+    const chartW = Math.max(700, labelWidth + totalDays * pxPerDay + 220);
     const chartH = headerH + withDates.length * rowH + 10;
 
     function dayX(ds) { return labelWidth + Math.round((new Date(ds) - minDate) / 86400000) * pxPerDay; }
@@ -993,10 +993,15 @@ function renderGanttChart(containerId) {
         if (fillW > 0) bars += `<rect x="${x1}" y="${y+5}" width="${fillW}" height="${rowH-10}" rx="3" fill="rgba(0,0,0,0.2)"/>`;
         if (pct > 0 && w > 50) bars += `<text x="${x1+w/2}" y="${y+rowH/2+4}" font-size="9" fill="white" text-anchor="middle" opacity="0.9">${pct}%</text>`;
 
+        // Start date label — left of bar with background pill
         const startLbl = new Date(task.start_date).toLocaleDateString(undefined, { month:'short', day:'numeric' });
         const endLbl   = new Date(task.end_date).toLocaleDateString(undefined,   { month:'short', day:'numeric' });
-        bars += `<text x="${x1-3}" y="${y+rowH/2+4}" font-size="10" fill="#2D3748" text-anchor="end">${startLbl}</text>`;
-        bars += `<text x="${x2+3}" y="${y+rowH/2+4}" font-size="10" fill="#2D3748" text-anchor="start">${endLbl}</text>`;
+        // Start label background
+        bars += `<rect x="${x1 - 54}" y="${y+7}" width="50" height="16" rx="3" fill="#EBF8FF" opacity="0.9"/>`;
+        bars += `<text x="${x1 - 4}" y="${y+rowH/2+3}" font-size="10" fill="#2B6CB0" text-anchor="end" font-weight="600">${startLbl}</text>`;
+        // End label background
+        bars += `<rect x="${x2 + 4}" y="${y+7}" width="50" height="16" rx="3" fill="#F0FFF4" opacity="0.9"/>`;
+        bars += `<text x="${x2 + 6}" y="${y+rowH/2+3}" font-size="10" fill="#276749" text-anchor="start" font-weight="600">${endLbl}</text>`;
 
         labels += `<text x="${labelWidth-6}" y="${y+rowH/2+4}" font-size="11" fill="#1B365D" text-anchor="end" font-weight="600"><title>${ea(lbl)}</title>${ea(lbl.length>30?lbl.slice(0,29)+'…':lbl)}</text>`;
     });
