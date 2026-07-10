@@ -416,6 +416,7 @@ async function loadUserManagement() {
             </td>
             <td style="padding:9px 12px;">
                 <button class="btn btn-primary" style="padding:6px 14px;font-size:13px;" onclick="updateUserRole('${u.id}','${u.email}')">Save</button>
+                <button class="btn btn-danger" style="padding:6px 14px;font-size:13px;margin-left:6px;" onclick="removeUser('${u.id}','${u.email}')">Remove</button>
             </td>
         </tr>`;
     });
@@ -431,6 +432,17 @@ async function updateUserRole(userId, email) {
     if (error) { statusEl.className = 'save-status err'; statusEl.innerText = 'Error: ' + error.message; return; }
     statusEl.className = 'save-status ok';
     statusEl.innerText = `${email} updated to ${newRole}.`;
+}
+
+async function removeUser(userId, email) {
+    if (!confirm(`Remove ${email} from the portal? They will lose access but their Supabase Auth account will remain.`)) return;
+    const statusEl = document.getElementById('userMgmtStatus');
+    statusEl.className = 'save-status pending'; statusEl.innerText = 'Removing…';
+    const { error } = await supabaseClient.from('user_roles').delete().eq('id', userId);
+    if (error) { statusEl.className = 'save-status err'; statusEl.innerText = 'Error: ' + error.message; return; }
+    statusEl.className = 'save-status ok';
+    statusEl.innerText = `${email} removed.`;
+    loadUserManagement();
 }
 
 async function doLogout() {
