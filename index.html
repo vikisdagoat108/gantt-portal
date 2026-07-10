@@ -1037,13 +1037,55 @@ function renderGanttChart(containerId) {
                    <polygon points="${x2},${y2} ${x2-6},${y2-4} ${x2-6},${y2+4}" fill="#718096"/>`;
     });
 
-    container.innerHTML = `<svg width="${chartW}" height="${chartH}" style="font-family:'Segoe UI',sans-serif;display:block;">
-        ${header}
-        <line x1="${labelWidth}" y1="0" x2="${labelWidth}" y2="${chartH}" stroke="#CBD5E0" stroke-width="1.5"/>
-        ${bars}${labels}${arrows}
-    </svg>`;
+    container.innerHTML = `<div style="display:flex;align-items:flex-start;gap:0;">
+        <div style="overflow-x:auto;flex:1;">
+            <svg width="${chartW}" height="${chartH}" style="font-family:'Segoe UI',sans-serif;display:block;">
+                ${header}
+                <line x1="${labelWidth}" y1="0" x2="${labelWidth}" y2="${chartH}" stroke="#CBD5E0" stroke-width="1.5"/>
+                ${bars}${labels}${arrows}
+            </svg>
+        </div>
+        ${(currentRole === 'admin' || currentRole === 'supervisor') ? `
+        <div style="flex-shrink:0;border-left:2px solid var(--border);background:#F7FAFC;min-width:280px;">
+            <div style="height:${headerH}px;background:var(--primary);display:flex;align-items:center;padding:0 10px;gap:8px;">
+                <span style="color:white;font-size:11px;font-weight:700;width:120px;">Start Date</span>
+                <span style="color:white;font-size:11px;font-weight:700;width:120px;">End Date</span>
+            </div>
+            ${withDates.map(task => `
+            <div style="height:${rowH}px;display:flex;align-items:center;padding:0 8px;gap:8px;border-bottom:1px solid var(--border);">
+                <input type="date" value="${task.start_date||''}" style="width:120px;padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:4px;"
+                    onchange="ganttDateChange('${task.dbId}','start_date',this.value)" title="${ea(task.title)} — Start Date">
+                <input type="date" value="${task.end_date||''}" style="width:120px;padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:4px;"
+                    onchange="ganttDateChange('${task.dbId}','end_date',this.value)" title="${ea(task.title)} — End Date">
+            </div>`).join('')}
+        </div>` : ''}
+    </div>`;
 
     if (missingEl) missingEl.innerHTML = '';
+}
+
+async function ganttDateChange(dbId, field, newVal) {
+    const row = gridRows.find(r => r.dbId === dbId);
+    if (!row) return;
+    const oldEndDate = row.end_date;
+    row[field] = newVal;
+    if (!row.isNew) row.isDirty = true;
+
+    const { error } = await supabaseClient.from('tasks').update({ [field]: newVal || null }).eq('id', dbId);
+    if (error) { alert('Save failed: ' + error.message); return; }
+
+    // Cascade if end_date changed
+    if (field === 'end_date' && oldEndDate && newVal) {
+        const delta = Math.round((new Date(newVal) - new Date(oldEndDate)) / 86400000);
+        if (delta !== 0) await cascadeShift(dbId, delta, new Set([dbId]));
+    }
+
+    // Refresh whichever Gantt charts are visible
+    ['ganttContainer','supGanttChart','userGanttChart'].forEach(id => {
+        if (document.getElementById(id) && document.getElementById(id).innerHTML.includes('<svg')) {
+            renderGanttChart(id);
+        }
+    });
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
