@@ -216,6 +216,7 @@
                             <th style="min-width:120px;">Start Date</th>
                             <th style="min-width:120px;">End Date</th>
                             <th style="min-width:75px;">Progress %</th>
+                            <th style="min-width:130px;">Assigned To</th>
                             <th class="row-actions">Del</th>
                         </tr></thead>
                         <tbody id="gridBody"></tbody>
@@ -506,7 +507,8 @@ function newRowObject(existing) {
         parent_label: '',
         start_date:   existing ? (existing.start_date || '') : '',
         end_date:     existing ? (existing.end_date   || '') : '',
-        progress:     existing && existing.progress !== null ? existing.progress : ''
+        progress:     existing && existing.progress !== null ? existing.progress : '',
+        assigned_to:  existing ? (existing.assigned_to || '') : ''
     };
 }
 
@@ -692,6 +694,7 @@ function renderGrid() {
             <td><input type="date"   value="${row.start_date || ''}" onchange="updateField('${row.rowId}','start_date',this.value)"></td>
             <td><input type="date"   value="${row.end_date   || ''}" onchange="updateField('${row.rowId}','end_date',this.value)"></td>
             <td><input type="number" value="${row.progress !== '' && row.progress !== null ? row.progress : ''}" min="0" max="100" step="1" placeholder="—" onchange="updateField('${row.rowId}','progress',this.value===''?'':(parseFloat(this.value)||0))"></td>
+            <td><input type="text" value="${ea(row.assigned_to)}" placeholder="e.g. John" oninput="updateField('${row.rowId}','assigned_to',this.value)"></td>
             <td class="row-actions"><button onclick="removeRow('${row.rowId}')" title="Delete">✕</button></td>`;
         body.appendChild(tr);
     });
@@ -781,7 +784,8 @@ async function saveAllRows() {
             const payload = { project_id: activeProjectId, title: titleVal, parent_id: parentUUID,
                 start_date: row.start_date||null, end_date: row.end_date||null, duration: durationDays,
                 sort_order: gridRows.indexOf(row)+1, type: row.type||'task',
-                progress: (row.progress===''||row.progress===undefined||row.progress===null)?0:Number(row.progress) };
+                progress: (row.progress===''||row.progress===undefined||row.progress===null)?0:Number(row.progress),
+                assigned_to: row.assigned_to || null };
             const withLabel = { ...payload, task_label: row.task_label||null };
             async function trySave(p) {
                 if (row.isNew) {
@@ -1004,6 +1008,10 @@ function renderGanttChart(containerId) {
         bars += `<text x="${x2 + 6}" y="${y+rowH/2+3}" font-size="10" fill="#276749" text-anchor="start" font-weight="600">${endLbl}</text>`;
 
         labels += `<text x="${labelWidth-6}" y="${y+rowH/2+4}" font-size="11" fill="#1B365D" text-anchor="end" font-weight="600"><title>${ea(lbl)}</title>${ea(lbl.length>30?lbl.slice(0,29)+'…':lbl)}</text>`;
+        // Assigned to label — shown inside or below the bar
+        if (task.assigned_to && task.assigned_to.trim()) {
+            bars += `<text x="${x1 + w/2}" y="${y+rowH-2}" font-size="9" fill="white" text-anchor="middle" opacity="0.9">👤 ${ea(task.assigned_to)}</text>`;
+        }
     });
 
     let arrows = '';
