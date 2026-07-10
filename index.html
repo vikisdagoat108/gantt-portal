@@ -266,6 +266,46 @@
             </div>
 
             <div class="card">
+                <h2>📋 Resources / Contacts</h2>
+                <p style="color:var(--secondary);font-size:14px;margin-top:-10px;">
+                    Import your resources spreadsheet or add entries manually. Columns: <strong>ID, Name, Type, Email, Phone, Phone 2, Street, City, State, Zip</strong>
+                </p>
+                <div class="form-group"><label>Upload .xlsx / .csv file</label><input type="file" id="resImportFileInput" accept=".csv,.xlsx,.xls" onchange="handleResFileImport(event)"></div>
+                <div class="form-group"><label>Or paste (tab-separated)</label><textarea id="resPasteArea" style="height:70px;font-family:monospace;" placeholder="Res - 1&#9;Home Depot&#9;Windows&#9;email@example.com&#9;206-555-1234"></textarea></div>
+                <div class="btn-row" style="margin-top:0;">
+                    <button class="btn btn-secondary" onclick="handleResPasteImport()">Import Pasted Rows</button>
+                    <span class="save-status" id="resImportStatus"></span>
+                </div>
+
+                <div style="margin-top:20px;" class="grid-wrapper">
+                    <table class="task-grid">
+                        <thead><tr>
+                            <th class="row-num">#</th>
+                            <th style="min-width:100px;">ID</th>
+                            <th style="min-width:200px;">Name</th>
+                            <th style="min-width:140px;">Type / Trade</th>
+                            <th style="min-width:180px;">Email</th>
+                            <th style="min-width:120px;">Phone</th>
+                            <th style="min-width:120px;">Phone 2</th>
+                            <th style="min-width:160px;">Street</th>
+                            <th style="min-width:100px;">City</th>
+                            <th style="min-width:60px;">State</th>
+                            <th style="min-width:70px;">Zip</th>
+                            <th class="row-actions">Del</th>
+                        </tr></thead>
+                        <tbody id="resGridBody"></tbody>
+                    </table>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-secondary" onclick="addBlankResRow(1)">+ Add Row</button>
+                    <button class="btn btn-secondary" onclick="addBlankResRow(5)">+ Add 5 Rows</button>
+                    <button class="btn btn-success" onclick="saveAllResources()">Save All Resources</button>
+                    <button class="btn btn-secondary" onclick="loadResources()">Reload from DB</button>
+                    <span class="save-status" id="resSaveStatus"></span>
+                </div>
+            </div>
+
+            <div class="card">
                 <h2>Gantt Chart (Admin)</h2>
                 <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
                     <button class="btn btn-secondary" onclick="renderGanttChart('ganttContainer')">Generate / Refresh Chart</button>
@@ -393,7 +433,7 @@ async function loadRoleAndStart() {
     document.getElementById('supervisorView').style.display = currentRole === 'supervisor' ? 'block' : 'none';
     document.getElementById('userView').style.display       = currentRole === 'user'       ? 'block' : 'none';
     await fetchExistingProjects();
-    if (currentRole === 'admin') loadUserManagement();
+    if (currentRole === 'admin') { loadUserManagement(); loadResources(); }
 }
 
 async function loadUserManagement() {
@@ -402,11 +442,15 @@ async function loadUserManagement() {
     if (error) { listEl.innerHTML = `<p style="color:var(--danger);">Could not load users: ${error.message}</p>`; return; }
     if (!data || data.length === 0) { listEl.innerHTML = '<p style="color:var(--secondary);">No users found.</p>'; return; }
     let html = '<table style="width:100%;border-collapse:collapse;font-size:14px;">';
-    html += '<thead><tr style="background:var(--primary);color:white;"><th style="padding:9px 12px;text-align:left;">Email</th><th style="padding:9px 12px;text-align:left;">Role</th><th style="padding:9px 12px;text-align:left;">Action</th></tr></thead><tbody>';
+    html += '<thead><tr style="background:var(--primary);color:white;"><th style="padding:9px 12px;text-align:left;">Email</th><th style="padding:9px 12px;text-align:left;">Phone</th><th style="padding:9px 12px;text-align:left;">Role</th><th style="padding:9px 12px;text-align:left;">Action</th></tr></thead><tbody>';
     data.forEach((u, idx) => {
         const bg = idx % 2 === 0 ? '#F7FAFC' : 'white';
         html += `<tr style="background:${bg};">
             <td style="padding:9px 12px;">${u.email}</td>
+            <td style="padding:9px 12px;">
+                <input type="tel" id="phone_${u.id}" value="${u.phone||''}" placeholder="+12065551234"
+                    style="padding:5px 8px;font-size:13px;width:150px;border:1px solid var(--border);border-radius:4px;">
+            </td>
             <td style="padding:9px 12px;">
                 <select id="role_${u.id}" style="padding:5px 8px;font-size:13px;width:auto;">
                     <option value="user"       ${u.role==='user'?'selected':''}>User</option>
@@ -425,13 +469,14 @@ async function loadUserManagement() {
 }
 
 async function updateUserRole(userId, email) {
-    const newRole = document.getElementById('role_' + userId).value;
+    const newRole  = document.getElementById('role_' + userId).value;
+    const newPhone = document.getElementById('phone_' + userId).value.trim() || null;
     const statusEl = document.getElementById('userMgmtStatus');
     statusEl.className = 'save-status pending'; statusEl.innerText = 'Saving…';
-    const { error } = await supabaseClient.from('user_roles').update({ role: newRole }).eq('id', userId);
+    const { error } = await supabaseClient.from('user_roles').update({ role: newRole, phone: newPhone }).eq('id', userId);
     if (error) { statusEl.className = 'save-status err'; statusEl.innerText = 'Error: ' + error.message; return; }
     statusEl.className = 'save-status ok';
-    statusEl.innerText = `${email} updated to ${newRole}.`;
+    statusEl.innerText = `${email} updated.`;
 }
 
 async function removeUser(userId, email) {
@@ -1068,16 +1113,28 @@ async function ganttDateChange(dbId, field, newVal) {
     const row = gridRows.find(r => r.dbId === dbId);
     if (!row) return;
     const oldEndDate = row.end_date;
+    const oldVal = row[field];
     row[field] = newVal;
     if (!row.isNew) row.isDirty = true;
 
     const { error } = await supabaseClient.from('tasks').update({ [field]: newVal || null }).eq('id', dbId);
     if (error) { alert('Save failed: ' + error.message); return; }
 
+    // Track which tasks get shifted so we can notify their assigned people
+    const affectedTasks = [row];
+
     // Cascade if end_date changed
     if (field === 'end_date' && oldEndDate && newVal) {
         const delta = Math.round((new Date(newVal) - new Date(oldEndDate)) / 86400000);
-        if (delta !== 0) await cascadeShift(dbId, delta, new Set([dbId]));
+        if (delta !== 0) {
+            const shifted = await cascadeShiftWithTracking(dbId, delta, new Set([dbId]));
+            affectedTasks.push(...shifted);
+        }
+    }
+
+    // Send SMS notifications to assigned people
+    if (oldVal !== newVal) {
+        await notifyAffectedPeople(affectedTasks, field, oldVal, newVal);
     }
 
     // Refresh whichever Gantt charts are visible
@@ -1086,6 +1143,227 @@ async function ganttDateChange(dbId, field, newVal) {
             renderGanttChart(id);
         }
     });
+}
+
+async function cascadeShiftWithTracking(sourceDbId, deltaDays, visited) {
+    const shifted = [];
+    const dependentDeps = allDependencies.filter(d => d.source_task_id === sourceDbId && d.type === 'FS');
+    for (const dep of dependentDeps) {
+        if (visited.has(dep.target_task_id)) continue;
+        visited.add(dep.target_task_id);
+        const targetRow = gridRows.find(r => r.dbId === dep.target_task_id);
+        if (!targetRow) continue;
+        const newStart = targetRow.start_date ? addDays(targetRow.start_date, deltaDays + (dep.lag||0)) : '';
+        const newEnd   = targetRow.end_date   ? addDays(targetRow.end_date,   deltaDays + (dep.lag||0)) : '';
+        targetRow.start_date = newStart; targetRow.end_date = newEnd;
+        await supabaseClient.from('tasks').update({ start_date: newStart||null, end_date: newEnd||null }).eq('id', dep.target_task_id);
+        shifted.push(targetRow);
+        const further = await cascadeShiftWithTracking(dep.target_task_id, deltaDays, visited);
+        shifted.push(...further);
+    }
+    return shifted;
+}
+
+async function notifyAffectedPeople(tasks, field, oldVal, newVal) {
+    // Get all user_roles with phone numbers to build a name→phone map
+    const { data: contacts } = await supabaseClient.from('user_roles').select('email, phone').not('phone', 'is', null);
+    if (!contacts || contacts.length === 0) return;
+
+    // Build assigned_to name → phone lookup
+    // assigned_to might match email or just a name — check both
+    const phoneMap = {};
+    contacts.forEach(c => {
+        if (c.phone) {
+            phoneMap[c.email.toLowerCase()] = c.phone;
+            // Also map by the part before @ for name matching
+            const namePart = c.email.split('@')[0].toLowerCase();
+            phoneMap[namePart] = c.phone;
+        }
+    });
+
+    const fieldLabel = field === 'start_date' ? 'start date' : 'end date';
+    const notified = new Set();
+
+    for (const task of tasks) {
+        if (!task.assigned_to || !task.assigned_to.trim()) continue;
+        const key = task.assigned_to.trim().toLowerCase();
+        const phone = phoneMap[key];
+        if (!phone || notified.has(phone)) continue;
+        notified.add(phone);
+
+        const message = `MCH Project Tracker: "${task.title}" ${fieldLabel} changed` +
+            (task.start_date ? ` → new dates: ${task.start_date} to ${task.end_date}` : '') +
+            `. Please review your schedule.`;
+
+        try {
+            await supabaseClient.functions.invoke('send-sms', {
+                body: { to: phone, message }
+            });
+        } catch (e) {
+            console.warn('SMS failed for', phone, e);
+        }
+    }
+}
+
+// ── RESOURCES ────────────────────────────────────────────────────
+
+let resRows = [];
+let resRowCounter = 0;
+
+function newResRowObject(existing) {
+    resRowCounter++;
+    return {
+        resRowId: 'rr' + resRowCounter,
+        dbId:      existing ? existing.id : null,
+        isNew:     !existing, isDirty: false,
+        res_label: existing ? (existing.res_label || '') : '',
+        name:      existing ? (existing.name  || '') : '',
+        type:      existing ? (existing.type  || '') : '',
+        email:     existing ? (existing.email || '') : '',
+        phone:     existing ? (existing.phone || '') : '',
+        phone2:    existing ? (existing.phone2 || '') : '',
+        street:    existing ? (existing.street || '') : '',
+        city:      existing ? (existing.city  || '') : '',
+        state:     existing ? (existing.state || '') : '',
+        zip:       existing ? (existing.zip   || '') : ''
+    };
+}
+
+function updateResField(resRowId, field, value) {
+    const row = resRows.find(r => r.resRowId === resRowId); if (!row) return;
+    row[field] = value; if (!row.isNew) row.isDirty = true;
+}
+
+function addBlankResRow(n) {
+    for (let i = 0; i < n; i++) resRows.push(newResRowObject(null));
+    renderResGrid();
+}
+
+function removeResRow(resRowId) {
+    const row = resRows.find(r => r.resRowId === resRowId); if (!row) return;
+    if (!row.isNew && !confirm('Delete this resource permanently?')) return;
+    if (!row.isNew) supabaseClient.from('resources').delete().eq('id', row.dbId);
+    resRows = resRows.filter(r => r.resRowId !== resRowId);
+    renderResGrid();
+}
+
+function renderResGrid() {
+    const body = document.getElementById('resGridBody'); if (!body) return;
+    body.innerHTML = '';
+    resRows.forEach((row, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = row.isNew ? 'new-row' : (row.isDirty ? 'dirty-row' : '');
+        const f = (field, placeholder='') => `<input type="text" value="${ea(row[field])}" placeholder="${placeholder}" oninput="updateResField('${row.resRowId}','${field}',this.value)">`;
+        tr.innerHTML = `
+            <td class="row-num">${idx+1}</td>
+            <td>${f('res_label','Res - 1')}</td>
+            <td>${f('name','Name')}</td>
+            <td>${f('type','Trade / Type')}</td>
+            <td>${f('email','email@example.com')}</td>
+            <td>${f('phone','206-555-1234')}</td>
+            <td>${f('phone2','')}</td>
+            <td>${f('street','Street address')}</td>
+            <td>${f('city','City')}</td>
+            <td>${f('state','WA')}</td>
+            <td>${f('zip','98000')}</td>
+            <td class="row-actions"><button onclick="removeResRow('${row.resRowId}')" title="Delete">✕</button></td>`;
+        body.appendChild(tr);
+    });
+}
+
+function importResRowsFromArrays(rows) {
+    const statusEl = document.getElementById('resImportStatus');
+    let imported = 0;
+    rows.forEach(cells => {
+        if (!cells || cells.length === 0) return;
+        const c0 = (cells[0]||'').toString().trim();
+        if (/^id$/i.test(c0)) return; // header
+        if (cells.every(c => !c || String(c).trim() === '')) return;
+        const row = newResRowObject(null);
+        row.res_label = c0;
+        row.name   = (cells[1]||'').toString().trim();
+        row.type   = (cells[2]||'').toString().trim();
+        row.email  = (cells[3]||'').toString().trim();
+        row.phone  = (cells[4]||'').toString().trim();
+        row.phone2 = (cells[5]||'').toString().trim();
+        row.street = (cells[6]||'').toString().trim();
+        row.city   = (cells[7]||'').toString().trim();
+        row.state  = (cells[8]||'').toString().trim();
+        row.zip    = (cells[9]||'').toString().trim();
+        resRows.push(row); imported++;
+    });
+    renderResGrid();
+    statusEl.className = 'save-status ok';
+    statusEl.innerText = `Imported ${imported} resource(s). Click "Save All Resources".`;
+}
+
+function handleResFileImport(event) {
+    const file = event.target.files[0]; if (!file) return;
+    const statusEl = document.getElementById('resImportStatus');
+    statusEl.className = 'save-status pending'; statusEl.innerText = 'Reading...';
+    const reader = new FileReader();
+    reader.onload = e => {
+        try {
+            const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: false });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            importResRowsFromArrays(XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }));
+        } catch(err) { statusEl.className = 'save-status err'; statusEl.innerText = 'Error: ' + err.message; }
+        event.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function handleResPasteImport() {
+    const text = document.getElementById('resPasteArea').value;
+    const statusEl = document.getElementById('resImportStatus');
+    if (!text||!text.trim()) { statusEl.className='save-status err'; statusEl.innerText='Nothing pasted.'; return; }
+    importResRowsFromArrays(text.trim().split('\n').map(l => l.split('\t')));
+    document.getElementById('resPasteArea').value = '';
+}
+
+async function saveAllResources() {
+    if (!supabaseClient) return alert('Connect first.');
+    const statusEl = document.getElementById('resSaveStatus');
+    statusEl.className = 'save-status pending'; statusEl.innerText = 'Saving…';
+    const toSave = resRows.filter(r => r.name || r.res_label);
+    if (toSave.length === 0) { statusEl.className = 'save-status err'; statusEl.innerText = 'Nothing to save.'; return; }
+    let saved = 0;
+    try {
+        for (const row of toSave) {
+            const payload = {
+                res_label: row.res_label || null,
+                name:  row.name  || '(unnamed)',
+                type:  row.type  || null,
+                email: row.email || null,
+                phone: row.phone || null,
+                phone2: row.phone2 || null,
+                street: row.street || null,
+                city:  row.city  || null,
+                state: row.state || null,
+                zip:   row.zip   || null
+            };
+            if (row.isNew) {
+                const { data, error } = await supabaseClient.from('resources').insert([payload]).select();
+                if (error) throw new Error(`Save failed for "${row.name}": ${error.message}`);
+                row.dbId = data[0].id; row.isNew = false;
+            } else {
+                const { error } = await supabaseClient.from('resources').update(payload).eq('id', row.dbId);
+                if (error) throw new Error(`Update failed for "${row.name}": ${error.message}`);
+            }
+            row.isDirty = false; saved++;
+        }
+        statusEl.className = 'save-status ok'; statusEl.innerText = `Saved ${saved} resource(s).`;
+        renderResGrid();
+    } catch(err) { statusEl.className = 'save-status err'; statusEl.innerText = err.message; }
+}
+
+async function loadResources() {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient.from('resources').select('*').order('res_label', { ascending: true });
+    if (error) { alert('Could not load resources: ' + error.message); return; }
+    resRows = (data||[]).map(r => newResRowObject(r));
+    if (resRows.length === 0) addBlankResRow(3);
+    else renderResGrid();
 }
 
 // ── INIT ─────────────────────────────────────────────────────────
