@@ -308,9 +308,16 @@
             <div class="card">
                 <h2>🔗 Task Assignments</h2>
                 <p style="color:var(--secondary);font-size:14px;margin-top:-10px;">
-                    Assign resources to tasks. Select a task and a resource from the dropdowns, set the allocation %, then save.
+                    Assign resources to tasks. Import from Excel or add rows manually using the dropdowns.
+                    Expected import columns: <strong>Task ID, Resource ID, Allocation %</strong> (e.g. "Task - 102", "Res - 9", "100").
                     Tasks and Resources must be saved first before they appear in the dropdowns.
                 </p>
+                <div class="form-group"><label>Upload .xlsx / .csv file</label><input type="file" id="assignImportFileInput" accept=".csv,.xlsx,.xls" onchange="handleAssignFileImport(event)"></div>
+                <div class="form-group"><label>Or paste (tab-separated)</label><textarea id="assignPasteArea" style="height:60px;font-family:monospace;" placeholder="Task - 102&#9;Res - 13&#9;100&#10;Task - 103&#9;Res - 8&#9;100"></textarea></div>
+                <div class="btn-row" style="margin-top:0;margin-bottom:16px;">
+                    <button class="btn btn-secondary" onclick="handleAssignPasteImport()">Import Pasted Rows</button>
+                    <span class="save-status" id="assignImportStatus"></span>
+                </div>
                 <div class="grid-wrapper">
                     <table class="task-grid">
                         <thead><tr>
@@ -1309,6 +1316,93 @@ function renderAssignGrid() {
             <td class="row-actions"><button onclick="removeAssignRow('${row.assignRowId}')" title="Delete">✕</button></td>`;
         body.appendChild(tr);
     });
+}
+
+async function importAssignRowsFromArrays(rows) {
+    const statusEl = document.getElementById('assignImportStatus');
+    statusEl.className = 'save-status pending'; statusEl.innerText = 'Matching IDs...';
+
+    // Build lookup maps from label → dbId
+    const taskMap = {};
+    gridRows.filter(r => r.dbId && r.task_label).forEach(r => { taskMap[r.task_label.trim()] = r.dbId; });
+    // Also fetch from DB in case grid isn't loaded
+    if (supabaseClient && activeProjectId) {
+        const { data } = await supabaseClient.from('tasks').select('id, task_label').eq('project_id', activeProjectId);
+        (data||[]).forEach(t => { if (t.task_label) taskMap[t.task_label.trim()] = t.id; });
+    }
+
+    const resMap = {};
+    resRows.filter(r => r.dbId && r.res_label).forEach(r => { resMap[r.res_label.trim()] = r.dbId; });
+    if (supabaseClient) {
+        const { data } = await supabaseClient.from('resources').select('id, res_label');
+        (data||[]).forEach(r => { if (r.res_label) resMap[r.res_label.trim()] = r.id; });
+    }
+
+    let imported = 0, skipped = 0;
+    const skippedLabels = [];
+
+    rows.forEach(cells => {
+        if (!cells || cells.length === 0) return;
+        const c0 = (cells[0]||'').toString().trim();
+        // Skip header
+        if (/^task/i.test(c0) && !/^task\s*-\s*\d/i.test(c0)) return;
+        if (cells.every(c => !c || String(c).trim() === '')) return;
+
+        const taskLabel = c0;
+        const resLabel  = (cells[1]||'').toString().trim();
+        const alloc     = parseFloat((cells[2]||'100').toString().replace('%','')) || 100;
+
+        const taskId = taskMap[taskLabel];
+        const resId  = resMap[resLabel];
+
+        if (!taskId || !resId) {
+            skipped++;
+            if (!taskId) skippedLabels.push(taskLabel);
+            if (!resId)  skippedLabels.push(resLabel);
+            return;
+        }
+
+        // Avoid duplicate rows
+        const existing = assignRows.find(r => r.task_id === taskId && r.resource_id === resId);
+        if (existing) { existing.allocation = alloc; existing.isDirty = true; imported++; return; }
+
+        const row = newAssignRowObject(null);
+        row.task_id     = taskId;
+        row.resource_id = resId;
+        row.allocation  = alloc;
+        assignRows.push(row);
+        imported++;
+    });
+
+    renderAssignGrid();
+    statusEl.className = skipped > 0 ? 'save-status err' : 'save-status ok';
+    statusEl.innerText = skipped > 0
+        ? `Imported ${imported}, skipped ${skipped}. Not found: ${[...new Set(skippedLabels)].join(', ')}`
+        : `Imported ${imported} assignment(s). Click "Save All Assignments".`;
+}
+
+function handleAssignFileImport(event) {
+    const file = event.target.files[0]; if (!file) return;
+    const statusEl = document.getElementById('assignImportStatus');
+    statusEl.className = 'save-status pending'; statusEl.innerText = 'Reading...';
+    const reader = new FileReader();
+    reader.onload = async e => {
+        try {
+            const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array', cellDates: false });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            await importAssignRowsFromArrays(XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }));
+        } catch(err) { statusEl.className = 'save-status err'; statusEl.innerText = 'Error: ' + err.message; }
+        event.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function handleAssignPasteImport() {
+    const text = document.getElementById('assignPasteArea').value;
+    const statusEl = document.getElementById('assignImportStatus');
+    if (!text||!text.trim()) { statusEl.className='save-status err'; statusEl.innerText='Nothing pasted.'; return; }
+    await importAssignRowsFromArrays(text.trim().split('\n').map(l => l.split('\t')));
+    document.getElementById('assignPasteArea').value = '';
 }
 
 async function saveAllAssignments() {
