@@ -562,8 +562,8 @@ async function fetchExistingProjects() {
     const sel    = document.getElementById('existingProjectSelect');
     const topSel = document.getElementById('topbarProjectSelect');
     if (error) { sel.innerHTML = `<option value="">-- Error loading --</option>`; return; }
-    const opts = '<option value="">-- Select a project --</option>' +
-        (data||[]).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+    const opts = '<option value="" style="background:white;color:#2D3748;">-- Select a project --</option>' +
+        (data||[]).map(p => `<option value="${p.id}" style="background:white;color:#2D3748;">${p.name}</option>`).join('');
     sel.innerHTML    = opts;
     topSel.innerHTML = opts;
 }
