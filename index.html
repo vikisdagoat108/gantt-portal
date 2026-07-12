@@ -632,12 +632,12 @@ async function handleProjectSubmit(event) {
     if (error) return alert('Error: ' + error.message);
     activeProjectId = data[0].id;
 
-    // Find the Template project
-    const { data: templates } = await supabaseClient
-        .from('projects').select('id').ilike('name', 'Template').limit(1);
+    // Find the Template project - looks for any project with "template" in the name
+    const { data: allProjects } = await supabaseClient.from('projects').select('id, name');
+    const templateProject = (allProjects || []).find(p => p.name.toLowerCase().includes('template'));
 
-    if (templates && templates.length > 0) {
-        const templateId = templates[0].id;
+    if (templateProject) {
+        const templateId = templateProject.id;
 
         // Fetch all template tasks
         const { data: templateTasks } = await supabaseClient
@@ -690,13 +690,16 @@ async function handleProjectSubmit(event) {
         }
     }
 
+    const templateMsg = templateProject
+        ? ` Copied from template "${templateProject.name}".`
+        : ' (No template project found — create a project named "Template" to enable pre-loading.)';
     await fetchExistingProjects();
     document.getElementById('existingProjectSelect').value = activeProjectId;
     document.getElementById('topbarProjectSelect').value   = activeProjectId;
     document.getElementById('activeProjectBanner').innerText = `Active: ${name}`;
     document.getElementById('activeProjectBanner').style.display = 'block';
     await refreshDataContainers();
-    alert(`Project "${name}" created with all template tasks and dependencies pre-loaded.`);
+    alert(`Project "${name}" created.${templateMsg}`);
 }
 
 // ── ROW OBJECTS ──────────────────────────────────────────────────
