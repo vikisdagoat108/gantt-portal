@@ -626,12 +626,77 @@ async function handleProjectSubmit(event) {
     event.preventDefault();
     const name = document.getElementById('projName').value.trim();
     const description = document.getElementById('projDesc').value.trim();
+
+    // Create the new project
     const { data, error } = await supabaseClient.from('projects').insert([{ name, description }]).select();
     if (error) return alert('Error: ' + error.message);
     activeProjectId = data[0].id;
-    alert('Project created: ' + data[0].name);
-    fetchExistingProjects();
-    refreshDataContainers();
+
+    // Find the Template project
+    const { data: templates } = await supabaseClient
+        .from('projects').select('id').ilike('name', 'Template').limit(1);
+
+    if (templates && templates.length > 0) {
+        const templateId = templates[0].id;
+
+        // Fetch all template tasks
+        const { data: templateTasks } = await supabaseClient
+            .from('tasks').select('*').eq('project_id', templateId).order('sort_order', { ascending: true });
+
+        if (templateTasks && templateTasks.length > 0) {
+            // Map old task UUID → new task UUID
+            const idMap = {};
+
+            // Insert tasks one by one (need IDs back to build dependency map)
+            // First pass: insert without parent_id so no FK issues
+            for (const t of templateTasks) {
+                const { id: oldId, ...rest } = t;
+                const payload = {
+                    ...rest,
+                    id: undefined,
+                    project_id: activeProjectId,
+                    parent_id: null  // will fix in second pass
+                };
+                const { data: newTask } = await supabaseClient.from('tasks').insert([payload]).select();
+                if (newTask && newTask[0]) idMap[oldId] = newTask[0].id;
+            }
+
+            // Second pass: update parent_id using the id map
+            for (const t of templateTasks) {
+                if (t.parent_id && idMap[t.parent_id] && idMap[t.id]) {
+                    await supabaseClient.from('tasks').update({ parent_id: idMap[t.parent_id] }).eq('id', idMap[t.id]);
+                }
+            }
+
+            // Fetch all template dependencies
+            const templateTaskIds = templateTasks.map(t => t.id);
+            const { data: templateDeps } = await supabaseClient
+                .from('task_dependencies').select('*').in('source_task_id', templateTaskIds);
+
+            // Copy dependencies using new IDs
+            if (templateDeps && templateDeps.length > 0) {
+                const depPayloads = templateDeps
+                    .filter(d => idMap[d.source_task_id] && idMap[d.target_task_id])
+                    .map(d => ({
+                        source_task_id: idMap[d.source_task_id],
+                        target_task_id: idMap[d.target_task_id],
+                        type: d.type,
+                        lag: d.lag
+                    }));
+                if (depPayloads.length > 0) {
+                    await supabaseClient.from('task_dependencies').insert(depPayloads);
+                }
+            }
+        }
+    }
+
+    await fetchExistingProjects();
+    document.getElementById('existingProjectSelect').value = activeProjectId;
+    document.getElementById('topbarProjectSelect').value   = activeProjectId;
+    document.getElementById('activeProjectBanner').innerText = `Active: ${name}`;
+    document.getElementById('activeProjectBanner').style.display = 'block';
+    await refreshDataContainers();
+    alert(`Project "${name}" created with all template tasks and dependencies pre-loaded.`);
 }
 
 // ── ROW OBJECTS ──────────────────────────────────────────────────
