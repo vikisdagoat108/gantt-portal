@@ -1090,7 +1090,14 @@ async function loadSupervisorView() {
     statusEl.innerText = '';
     await refreshDataContainers();
     const panel = document.getElementById('supGanttPanel');
-    const tasksWithDates = gridRows.filter(r => r.dbId && r.title);
+    const tasksWithDates = gridRows
+        .filter(r => r.dbId && r.title)
+        .sort((a, b) => {
+            if (!a.start_date && !b.start_date) return 0;
+            if (!a.start_date) return 1;
+            if (!b.start_date) return -1;
+            return new Date(a.start_date) - new Date(b.start_date);
+        });
     if (tasksWithDates.length === 0) { panel.innerHTML = '<p style="color:var(--secondary);padding:20px;">No tasks found. Select a project first.</p>'; return; }
 
     let html = `<div class="sup-gantt-header">
@@ -1175,7 +1182,9 @@ function renderGanttChart(containerId) {
     const container = document.getElementById(containerId);
     const missingEl = document.getElementById(missingMap[containerId]);
 
-    const withDates    = gridRows.filter(r => r.dbId && r.start_date && r.end_date && r.title);
+    const withDates    = gridRows
+        .filter(r => r.dbId && r.start_date && r.end_date && r.title)
+        .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
     const withoutDates = gridRows.filter(r => r.dbId && r.title && (!r.start_date || !r.end_date));
 
     if (withDates.length === 0) {
