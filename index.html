@@ -1327,9 +1327,15 @@ async function saveDatePanel(containerId) {
         const task = gridRows.find(r => r.dbId === taskDbId);
         if (!task) return;
 
-        // Duration in days from DB (stored as days)
-        const durationDays = (task.duration !== null && task.duration !== undefined && task.duration !== '')
-            ? Number(task.duration) : 0;
+        // Calculate duration from ACTUAL start/end dates — more reliable than stored duration
+        let durationDays = 0;
+        if (task.start_date && task.end_date) {
+            durationDays = Math.round((new Date(task.end_date) - new Date(task.start_date)) / 86400000);
+        } else if (task.duration && Number(task.duration) > 0) {
+            durationDays = Number(task.duration);
+        }
+        // Sanity cap — no task should be longer than 5 years (1825 days)
+        durationDays = Math.max(0, Math.min(durationDays, 1825));
 
         const endDate = durationDays > 0 ? addDays(startDate, durationDays) : startDate;
 
@@ -1337,7 +1343,7 @@ async function saveDatePanel(containerId) {
         task.start_date = startDate;
         task.end_date   = endDate;
 
-        // Find all successors via FS dependencies
+        // Find all successors via dependencies
         const successors = allDependencies.filter(d => d.source_task_id === taskDbId);
         for (const dep of successors) {
             if (visited.has(dep.target_task_id)) continue;
@@ -1347,13 +1353,16 @@ async function saveDatePanel(containerId) {
             } else if (dep.type === 'SS') {
                 successorStart = addDays(startDate, dep.lag || 0);
             } else if (dep.type === 'FF') {
-                // target end = source end + lag → target start = target end - target duration
                 const tgtTask = gridRows.find(r => r.dbId === dep.target_task_id);
-                const tgtDur  = tgtTask ? (Number(tgtTask.duration) || 0) : 0;
-                const tgtEnd  = addDays(endDate, dep.lag || 0);
+                let tgtDur = 0;
+                if (tgtTask && tgtTask.start_date && tgtTask.end_date) {
+                    tgtDur = Math.round((new Date(tgtTask.end_date) - new Date(tgtTask.start_date)) / 86400000);
+                    tgtDur = Math.max(0, Math.min(tgtDur, 1825));
+                }
+                const tgtEnd = addDays(endDate, dep.lag || 0);
                 successorStart = tgtDur > 0 ? addDays(tgtEnd, -tgtDur) : tgtEnd;
             } else {
-                successorStart = startDate; // SF fallback
+                successorStart = startDate;
             }
             await scheduleForward(dep.target_task_id, successorStart);
         }
