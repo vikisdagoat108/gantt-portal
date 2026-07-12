@@ -1305,106 +1305,89 @@ function renderGanttChart(containerId) {
 
 async function saveDatePanel(containerId) {
     const statusEl = document.getElementById('datePanelStatus_' + containerId);
-    statusEl.style.color = 'var(--secondary)'; statusEl.innerText = 'Recalculating schedule…';
+    statusEl.style.color = 'var(--secondary)'; statusEl.innerText = 'Finding changes…';
 
-    const withDates = gridRows.filter(r => r.dbId && r.title);
+    const allTasks = gridRows.filter(r => r.dbId && r.title);
 
-    // Find which task was changed
+    // Find which task was changed by comparing input to current value
     let changedTask = null;
     let newStartDate = null;
 
-    for (const task of withDates) {
+    for (const task of allTasks) {
         const startInput = document.getElementById('gd_start_' + task.dbId);
         if (!startInput) continue;
-        if (startInput.value !== (task.start_date || '')) {
+        if (startInput.value && startInput.value !== (task.start_date || '')) {
             changedTask  = task;
             newStartDate = startInput.value;
             break;
         }
-        // Also check if end date changed directly
-        const endInput = document.getElementById('gd_end_' + task.dbId);
-        if (endInput && endInput.value !== (task.end_date || '')) {
-            changedTask = task;
-            // Recalculate start from new end and duration
-            const dur = task.duration || 0;
-            newStartDate = dur > 0 ? addDays(endInput.value, -dur) : task.start_date;
-            break;
-        }
     }
 
-    if (!changedTask || !newStartDate) {
+    if (!changedTask || !newStartDate || !changedTask.start_date) {
         statusEl.style.color = 'var(--secondary)'; statusEl.innerText = 'No changes detected.';
         return;
     }
 
-    // Forward scheduling: recalculate all downstream tasks keeping durations fixed
-    const updates = {}; // dbId → { start_date, end_date }
-    const visited = new Set();
+    statusEl.innerText = 'Cascading…';
 
-    async function scheduleForward(taskDbId, startDate) {
-        if (visited.has(taskDbId)) return;
-        visited.add(taskDbId);
+    // Calculate how many days the start shifted
+    const deltaDays = Math.round((new Date(newStartDate) - new Date(changedTask.start_date)) / 86400000);
+    if (deltaDays === 0) { statusEl.innerText = 'No change.'; return; }
 
-        const task = gridRows.find(r => r.dbId === taskDbId);
-        if (!task) return;
+    // Fetch fresh dependencies from DB to ensure we have the full picture
+    const taskIds = allTasks.map(t => t.dbId);
+    let freshDeps = [];
+    if (taskIds.length > 0) {
+        const { data: d1 } = await supabaseClient.from('task_dependencies').select('*').in('source_task_id', taskIds);
+        const { data: d2 } = await supabaseClient.from('task_dependencies').select('*').in('target_task_id', taskIds);
+        const all = [...(d1||[]), ...(d2||[])];
+        // Deduplicate by id
+        const seen = new Set();
+        freshDeps = all.filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
+    }
+    allDependencies = freshDeps;
 
-        // Calculate duration from ACTUAL start/end dates — more reliable than stored duration
-        let durationDays = 0;
-        if (task.start_date && task.end_date) {
-            durationDays = Math.round((new Date(task.end_date) - new Date(task.start_date)) / 86400000);
-        } else if (task.duration && Number(task.duration) > 0) {
-            durationDays = Number(task.duration);
-        }
-        // Sanity cap — no task should be longer than 5 years (1825 days)
-        durationDays = Math.max(0, Math.min(durationDays, 1825));
+    // BFS: collect all downstream tasks reachable via FS dependencies
+    const toShift = new Map(); // dbId → true
+    const queue = [changedTask.dbId];
+    toShift.set(changedTask.dbId, true);
 
-        const endDate = durationDays > 0 ? addDays(startDate, durationDays) : startDate;
-
-        updates[taskDbId] = { start_date: startDate, end_date: endDate };
-        task.start_date = startDate;
-        task.end_date   = endDate;
-
-        // Find all successors via dependencies
-        const successors = allDependencies.filter(d => d.source_task_id === taskDbId);
+    while (queue.length > 0) {
+        const current = queue.shift();
+        const successors = freshDeps.filter(d => d.source_task_id === current && d.type === 'FS');
         for (const dep of successors) {
-            if (visited.has(dep.target_task_id)) continue;
-            let successorStart;
-            if (dep.type === 'FS') {
-                successorStart = addDays(endDate, dep.lag || 0);
-            } else if (dep.type === 'SS') {
-                successorStart = addDays(startDate, dep.lag || 0);
-            } else if (dep.type === 'FF') {
-                const tgtTask = gridRows.find(r => r.dbId === dep.target_task_id);
-                let tgtDur = 0;
-                if (tgtTask && tgtTask.start_date && tgtTask.end_date) {
-                    tgtDur = Math.round((new Date(tgtTask.end_date) - new Date(tgtTask.start_date)) / 86400000);
-                    tgtDur = Math.max(0, Math.min(tgtDur, 1825));
-                }
-                const tgtEnd = addDays(endDate, dep.lag || 0);
-                successorStart = tgtDur > 0 ? addDays(tgtEnd, -tgtDur) : tgtEnd;
-            } else {
-                successorStart = startDate;
+            if (!toShift.has(dep.target_task_id)) {
+                toShift.set(dep.target_task_id, true);
+                queue.push(dep.target_task_id);
             }
-            await scheduleForward(dep.target_task_id, successorStart);
         }
     }
 
-    await scheduleForward(changedTask.dbId, newStartDate);
+    // Shift all collected tasks by the same delta, keeping their duration intact
+    const updates = [];
+    for (const [dbId] of toShift) {
+        const task = allTasks.find(t => t.dbId === dbId);
+        if (!task) continue;
+        const newStart = addDays(task.start_date, deltaDays);
+        const newEnd   = task.end_date ? addDays(task.end_date, deltaDays) : null;
+        task.start_date = newStart;
+        task.end_date   = newEnd;
+        updates.push({ dbId, newStart, newEnd });
+    }
 
-    // Batch save all updated tasks to Supabase
-    const taskIds = Object.keys(updates);
-    for (const dbId of taskIds) {
+    // Save all to Supabase
+    for (const { dbId, newStart, newEnd } of updates) {
         await supabaseClient.from('tasks').update({
-            start_date: updates[dbId].start_date || null,
-            end_date:   updates[dbId].end_date   || null
+            start_date: newStart || null,
+            end_date:   newEnd   || null
         }).eq('id', dbId);
     }
 
-    // Reload from DB and re-render
+    // Reload and re-render
     await refreshDataContainers();
 
     statusEl.style.color = 'var(--success)';
-    statusEl.innerText = `✓ Rescheduled ${taskIds.length} task(s) — durations preserved.`;
+    statusEl.innerText = `✓ Shifted ${updates.length} task(s) by ${deltaDays > 0 ? '+' : ''}${deltaDays} day(s).`;
 
     ['ganttContainer','supGanttChart','userGanttChart'].forEach(id => {
         if (document.getElementById(id) && document.getElementById(id).innerHTML.includes('<svg')) {
@@ -1412,6 +1395,7 @@ async function saveDatePanel(containerId) {
         }
     });
 }
+
 
 async function cascadeShiftDeep(sourceDbId, deltaDays, visited) {
     // Find all FS dependencies where this task is the source
