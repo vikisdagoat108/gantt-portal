@@ -340,7 +340,7 @@
                         <thead><tr>
                             <th class="row-num">#</th>
                             <th style="min-width:280px;">Task</th>
-                            <th style="min-width:280px;">Resource / Person</th>
+                            <th style="min-width:280px;">Resource</th>
                             <th style="min-width:110px;">Allocation %</th>
                             <th class="row-actions">Del</th>
                         </tr></thead>
@@ -1464,7 +1464,7 @@ function buildTaskDropdown(selectedId) {
 function buildResourceDropdown(selectedId) {
     let html = '<option value="">-- Select Resource --</option>';
     resRows.filter(r => r.dbId).forEach(r => {
-        const lbl = (r.res_label ? r.res_label + ' — ' : '') + (r.name || '(unnamed)') + (r.type ? ` (${r.type})` : '');
+        const lbl = r.res_label ? r.res_label : (r.name || '(unnamed)');
         html += `<option value="${r.dbId}" ${r.dbId === selectedId ? 'selected' : ''}>${ea(lbl)}</option>`;
     });
     return html;
