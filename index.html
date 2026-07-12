@@ -1455,7 +1455,7 @@ function removeAssignRow(assignRowId) {
 function buildTaskDropdown(selectedId) {
     let html = '<option value="">-- Select Task --</option>';
     gridRows.filter(r => r.dbId).forEach(t => {
-        const lbl = (t.task_label ? t.task_label + ' — ' : '') + (t.title || '(untitled)');
+        const lbl = t.task_label ? t.task_label : (t.title || '(untitled)');
         html += `<option value="${t.dbId}" ${t.dbId === selectedId ? 'selected' : ''}>${ea(lbl)}</option>`;
     });
     return html;
