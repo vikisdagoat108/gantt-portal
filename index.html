@@ -249,6 +249,7 @@
                     <button class="btn btn-secondary" onclick="addBlankRow(10)">+ Add 10 Rows</button>
                     <button class="btn btn-success" onclick="saveAllRows()">Save All Changes</button>
                     <button class="btn btn-secondary" onclick="refreshDataContainers()">Reload from DB</button>
+                    <button class="btn btn-danger" onclick="deleteAllTasks()">🗑 Delete All Tasks</button>
                     <span class="save-status" id="saveStatus"></span>
                 </div>
             </div>
@@ -970,6 +971,17 @@ function renderDependencyGrid() {
 }
 
 // ── SAVE: TASKS ──────────────────────────────────────────────────
+
+async function deleteAllTasks() {
+    if (!activeProjectId) return alert('Select a project first.');
+    if (!confirm('Delete ALL tasks and dependencies for this project permanently? This cannot be undone.')) return;
+    const { error } = await supabaseClient.from('tasks').delete().eq('project_id', activeProjectId);
+    if (error) return alert('Could not delete tasks: ' + error.message);
+    gridRows = []; depRows = [];
+    addBlankRow(3);
+    renderDependencyGrid();
+    alert('All tasks deleted.');
+}
 
 async function saveAllRows() {
     if (!activeProjectId) return alert('Select a project first.');
