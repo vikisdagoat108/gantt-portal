@@ -481,6 +481,10 @@
                 <h2>Gantt Chart (Admin)</h2>
                 <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
                     <button class="btn btn-secondary" onclick="renderGanttChart('ganttContainer')">Generate / Refresh Chart</button>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px;">
+                        <input type="checkbox" id="showDatesToggle" checked onchange="renderGanttChart('ganttContainer')" style="width:auto;cursor:pointer;">
+                        Show Dates
+                    </label>
                 </div>
                 <div class="gantt-wrapper" id="ganttContainer"><p style="color:var(--secondary);padding:20px;text-align:center;">Click Generate once tasks have dates.</p></div>
                 <div class="gantt-missing" id="ganttMissingDates"></div>
@@ -502,6 +506,10 @@
                 <h2>Gantt Chart</h2>
                 <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
                     <button class="btn btn-secondary" onclick="renderGanttChart('supGanttChart')">Generate / Refresh Chart</button>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px;">
+                        <input type="checkbox" id="showDatesToggleSup" checked onchange="renderGanttChart('supGanttChart')" style="width:auto;cursor:pointer;">
+                        Show Dates
+                    </label>
                 </div>
                 <div class="gantt-wrapper" id="supGanttChart"><p style="color:var(--secondary);padding:20px;text-align:center;">Click Generate once tasks have dates.</p></div>
                 <div class="gantt-missing" id="supGanttMissing"></div>
@@ -514,6 +522,10 @@
                 <h2>📊 Gantt Chart</h2>
                 <div class="btn-row" style="margin-top:0;margin-bottom:14px;">
                     <button class="btn btn-secondary" onclick="renderGanttChart('userGanttChart')">Generate / Refresh Chart</button>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px;">
+                        <input type="checkbox" id="showDatesToggleUser" checked onchange="renderGanttChart('userGanttChart')" style="width:auto;cursor:pointer;">
+                        Show Dates
+                    </label>
                 </div>
                 <div class="gantt-wrapper" id="userGanttChart"><p style="color:var(--secondary);padding:20px;text-align:center;">Select a project above to view the chart.</p></div>
                 <div class="gantt-missing" id="userGanttMissing"></div>
@@ -1356,11 +1368,17 @@ function renderGanttChart(containerId) {
         if (fillW > 0) bars += `<rect x="${x1}" y="${y+5}" width="${fillW}" height="${rowH-10}" rx="3" fill="rgba(0,0,0,0.2)"/>`;
         if (pct > 0 && w > 50) bars += `<text x="${x1+w/2}" y="${y+rowH/2+4}" font-size="9" fill="white" text-anchor="middle" opacity="0.9">${pct}%</text>`;
 
-        // Start date label — below bar on the left
-        const startLbl = new Date(task.start_date).toLocaleDateString(undefined, { month:'short', day:'numeric' });
-        const endLbl   = new Date(task.end_date).toLocaleDateString(undefined,   { month:'short', day:'numeric' });
-        bars += `<text x="${x1}" y="${y+rowH-4}" font-size="9" fill="#2B6CB0" text-anchor="start" font-weight="600">${startLbl}</text>`;
-        bars += `<text x="${x2}" y="${y+rowH-4}" font-size="9" fill="#276749" text-anchor="end" font-weight="600">${endLbl}</text>`;
+        // Date labels — only if "Show Dates" toggle is checked
+        const toggleId = containerId === 'ganttContainer' ? 'showDatesToggle'
+                       : containerId === 'supGanttChart'  ? 'showDatesToggleSup'
+                       : 'showDatesToggleUser';
+        const showDates = !document.getElementById(toggleId) || document.getElementById(toggleId).checked;
+        if (showDates) {
+            const startLbl = new Date(task.start_date).toLocaleDateString(undefined, { month:'short', day:'numeric' });
+            const endLbl   = new Date(task.end_date).toLocaleDateString(undefined,   { month:'short', day:'numeric' });
+            bars += `<text x="${x1}" y="${y+rowH-4}" font-size="9" fill="#2B6CB0" text-anchor="start" font-weight="600">${startLbl}</text>`;
+            bars += `<text x="${x2}" y="${y+rowH-4}" font-size="9" fill="#276749" text-anchor="end" font-weight="600">${endLbl}</text>`;
+        }
 
         labels += `<text x="${labelWidth-6}" y="${y+rowH/2}" font-size="11" fill="#1B365D" text-anchor="end" font-weight="600"><title>${ea(lbl)}</title>${ea(lbl.length>30?lbl.slice(0,29)+'…':lbl)}</text>`;
 
