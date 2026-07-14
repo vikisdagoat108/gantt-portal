@@ -19,8 +19,36 @@
         #loginScreen {
             min-height: 100vh; display: flex; align-items: center; justify-content: center;
             background: url('https://raw.githubusercontent.com/vikisdagoat108/MCH-Project-Tracker/main/house.jpg') center/cover no-repeat;
-            position: relative;
+            position: relative; flex-direction: column; gap: 16px;
         }
+
+        /* ── MOBILE VIEW ────────────────────────────────────────── */
+        .mobile-toggle-btn {
+            position: fixed; bottom: 20px; right: 20px; z-index: 9999;
+            background: var(--primary); color: white; border: none;
+            padding: 12px 18px; border-radius: 50px; font-size: 14px; font-weight: bold;
+            cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .mobile-toggle-btn:hover { background: var(--accent); }
+
+        body.mobile-view .container { max-width: 100%; padding: 10px; }
+        body.mobile-view .card { padding: 15px; margin-bottom: 16px; }
+        body.mobile-view h2 { font-size: 16px; }
+        body.mobile-view .btn { padding: 10px 14px; font-size: 13px; }
+        body.mobile-view .btn-row { gap: 6px; }
+        body.mobile-view table.task-grid { font-size: 12px; min-width: unset; }
+        body.mobile-view table.task-grid th, body.mobile-view table.task-grid td input { font-size: 11px; padding: 5px 4px; }
+        body.mobile-view #topBar h1 { font-size: 14px; }
+        body.mobile-view #topBar { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+        body.mobile-view #topbarProjectSelect { font-size: 13px; }
+        body.mobile-view .config-box { flex-direction: column; }
+        body.mobile-view .login-card { width: 95%; padding: 24px 18px; }
+        body.mobile-view .grid-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        body.mobile-view .gantt-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        body.mobile-view .topbar-right { gap: 8px; }
+        body.mobile-view .role-badge { font-size: 11px; padding: 3px 8px; }
+        body.mobile-view .logout-btn, body.mobile-view .settings-btn { font-size: 11px; padding: 5px 10px; }
         #loginScreen::before {
             content: ''; position: absolute; inset: 0;
             background: rgba(0, 0, 0, 0.45);
@@ -142,11 +170,10 @@
         </div>
 
     </div>
+    <button class="mobile-toggle-btn" onclick="toggleMobileView()" id="loginMobileBtn">📱 Mobile View</button>
 </div>
-
-<!-- ═══════════════════════════ MAIN APP ════════════════════════ -->
 <div id="mainApp" style="display:none;">
-
+    <button class="mobile-toggle-btn" onclick="toggleMobileView()" id="appMobileBtn">📱 Mobile View</button>
     <div id="topBar">
         <h1>🏗 MCH Project Tracker</h1>
         <div style="flex:1; max-width:350px; margin: 0 20px;">
@@ -1858,8 +1885,35 @@ async function loadResources() {
     else renderResGrid();
 }
 
+// ── MOBILE VIEW ──────────────────────────────────────────────────
+
+function toggleMobileView() {
+    const isMobile = document.body.classList.toggle('mobile-view');
+    localStorage.setItem('mchMobileView', isMobile ? '1' : '0');
+    const label = isMobile ? '🖥 Desktop View' : '📱 Mobile View';
+    ['loginMobileBtn','appMobileBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.innerText = label;
+    });
+}
+
+function initMobileView() {
+    // Auto-enable mobile if on a small screen
+    const autoMobile = window.innerWidth < 768;
+    const stored = localStorage.getItem('mchMobileView');
+    const shouldMobile = stored !== null ? stored === '1' : autoMobile;
+    if (shouldMobile) {
+        document.body.classList.add('mobile-view');
+        ['loginMobileBtn','appMobileBtn'].forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.innerText = '🖥 Desktop View';
+        });
+    }
+}
+
 // ── INIT ─────────────────────────────────────────────────────────
 checkSession();
+initMobileView();
 </script>
 </body>
 </html>
