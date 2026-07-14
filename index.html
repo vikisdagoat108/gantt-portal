@@ -1334,6 +1334,9 @@ async function saveDatePanel(containerId) {
     }
     allDependencies = freshDeps;
 
+    // Show dep count so user can confirm deps exist
+    statusEl.innerText = `Found ${freshDeps.length} deps for ${taskIds.length} tasks. Running cascade…`;
+
     // BFS: find changed task + all downstream via any dependency
     const toShift = new Set([taskDbId]);
     const queue   = [taskDbId];
